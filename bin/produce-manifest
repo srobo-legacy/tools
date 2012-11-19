@@ -1,0 +1,114 @@
+#!/usr/bin/env python
+import datetime
+import subprocess
+import os
+import os.path
+import sys
+import re
+import argparse
+from itertools import chain
+
+parser = argparse.ArgumentParser(description = "Produce kit manifests.")
+
+parser.add_argument("-o", dest = "output",
+                    metavar = "FILE", type = argparse.FileType('w'),
+                    help = "Output file")
+
+parser.add_argument("-i", dest = "inventory",
+                    metavar = "PATH", type = str,
+                    help = "Path to inventory")
+
+parser.add_argument("-k", dest = "kit",
+                    metavar = "KIT", type = str,
+                    help = "Kit box ID")
+parser.add_argument("-t", dest = "team",
+                    metavar = "TEAM", type = str,
+                    help = "Team name")
+parser.add_argument("-l", dest = "leader",
+                    metavar = "LEADER", type = str,
+                    help = "Team leader")
+
+args = parser.parse_args()
+
+def abort(message):
+    print "Error: {0}".format(message)
+    sys.exit(1)
+
+if args.inventory:
+    INVENTORY_PATH = args.inventory
+else:
+    # Guess!
+    INVENTORY_PATH = '{0}/git/inventory'.format(os.getenv('HOME'))
+
+parts = {}
+
+path_cache = {}
+
+def get_path(code):
+    if code in path_cache:
+        return path_cache[code]
+    path = subprocess.check_output(['sr', 'inv-findpart', code], cwd = INVENTORY_PATH).strip()
+    path_cache[code] = path
+    return path
+
+if args.kit:
+    code = args.kit
+else:
+    code = raw_input("Enter kit box ID: ")
+kit_path = get_path(code)
+parts['kit'] = os.path.basename(kit_path).split('-')[-1][2:]
+
+def find_subpart(name, ty, specific = None, root = None):
+    if root is None:
+        root = kit_path
+    if isinstance(name, str):
+        name = [name]
+    first_name = name[0]
+    name.reverse()
+    for element in os.listdir(root):
+        match = re.match('^{0}-(sr[A-Z0-9]+)$'.format(ty.replace('.', '\\.')), element)
+        if match:
+            if not name:
+                abort("Unexpected duplicate {0} in kit {1}".format(first_name, code))
+            asset_code = match.group(1)
+            specific_name = name.pop()
+            if specific is not None:
+                subpath = get_path(asset_code)
+                find_subpart(specific_name, specific, root = subpath)
+            else:
+                parts[specific_name] = asset_code[2:]
+    if name:
+        abort("Kit {0} is missing {1}".format(code, name[0]))
+
+find_subpart('jointio', 'jointio-board-sr1[13].f-assy', 'jointio-board-sr1[13].f-case')
+find_subpart('servo', 'servo-board-sr1[13].f-assy', 'servo-board-sr1[13].f-case')
+find_subpart('power', 'power-board-sr1[13].f-assy', 'power-board-sr1[13].f-case')
+find_subpart(['motor1', 'motor2'], 'motor-board-sr1[13](?:-case-sr1[13])?.f-assy', 'motor-board-sr1[13].f-case')
+find_subpart('hub', 'usb-hub-akasa-connect')
+find_subpart('memory_stick', 'usb-stick-kingston-[28]gb')
+find_subpart('webcam', 'webcam-logitech-c(?:270|500)')
+find_subpart('mech', 'compartment-box-2013')
+find_subpart('charger', 'battery-charger-imax-b6')
+find_subpart('charger_power', 'battery-charger-imax-b6-supply')
+find_subpart(['lipo1', 'lipo2'], 'battery-lipo-11.1v2.2')
+find_subpart('charge-bag', 'lipo-bag-overlander-22x30')
+
+if args.team:
+    college = args.team
+else:
+    college = raw_input("Enter team: ")
+if args.leader:
+    leader = args.leader
+else:
+    leader = raw_input("Enter team leader: ")
+date = datetime.date.today()
+
+template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'manifest-template.html')
+with open(template_path, 'r') as f:
+    content = f.read().format(date = date, college = college, leader = leader, **parts)
+    process = subprocess.Popen(['sr', 'document', '-', '-H', '-o', '-'],
+                               stdin = subprocess.PIPE,
+                               stdout = args.output)
+    process.communicate(content)
+
