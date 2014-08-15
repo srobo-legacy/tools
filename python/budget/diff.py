@@ -3,16 +3,31 @@ import budget
 import sys, subprocess, tempfile, shutil, os
 from subprocess import check_call
 
-class AddedItem(object):
+class DiffItem(object):
+    def __init__(self, name):
+        self._name = name
+
+    def __cmp__(self, other):
+        if isinstance(other, DiffItem):
+            kind_cmp = cmp(type(self).__name__, type(other).__name__)
+            if kind_cmp != 0:
+                return kind_cmp
+            else:
+                return cmp(self._name, other._name)
+
+class AddedItem(DiffItem):
     def __init__(self, a):
+        super(AddedItem, self).__init__(a.name)
         self.a = a
 
-class RemovedItem(object):
+class RemovedItem(DiffItem):
     def __init__(self, a):
+        super(RemovedItem, self).__init__(a.name)
         self.a = a
 
-class ChangedItem(object):
+class ChangedItem(DiffItem):
     def __init__(self, a, b):
+        super(ChangedItem, self).__init__(a.name)
         self.a = a
         self.b = b
 
@@ -50,7 +65,7 @@ def diff_trees( a, b ):
     for i in added:
         changes.append( AddedItem( i ) )
 
-    return changes
+    return sorted(changes)
 
 def changes_to_tree( changes ):
     "Convert a list of changes into a tree"
