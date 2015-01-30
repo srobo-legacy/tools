@@ -123,6 +123,10 @@ class Ticket(object):
         self.list_prefix = spacings.most_common(1)[0][0]
         self.deplist_ends_in_newline = (self.deplist[-1] == "\n")
 
+    @property
+    def url(self):
+        return 'http://trac.srobo.org/ticket/{}'.format(self.num)
+
     def cleanup(self, dry_run=False,
                 msg="Synchronise dependency summaries with dependencies "
                     "(automated edit)"):
